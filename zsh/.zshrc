@@ -111,6 +111,30 @@ source $ZSH/oh-my-zsh.sh
 
 eval "$(starship init zsh)"
 
-alias ff='fastfetch'
+# ff: fastfetch with the saturn. Inside the buchhwin-shell session in the
+# shell's accent colour (Settings > Appearance): the planet in the accent, its
+# ring in the accent mixed halfway with white. Everywhere else, Plasma
+# included, in the blue of ~/.config/fastfetch/config.jsonc.
+ff() {
+  local config="$HOME/.config/fastfetch/config.jsonc"
+  # The saturn and its block need 101 columns; a narrower window (a tiled
+  # one in Hyprland) gets the block alone rather than lines that wrap.
+  local -a narrow=()
+  (( ${COLUMNS:-200} < 101 )) && narrow=(--logo-type none)
+  local settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
+  local hex=""
+  if [[ $XDG_CURRENT_DESKTOP == buchhwin-shell* && -r $settings ]] && (( $+commands[jq] )); then
+    hex=$(jq -r '.appearance.accent // empty' "$settings" 2>/dev/null)
+  fi
+  if [[ $hex =~ '^#[0-9a-fA-F]{6}$' ]]; then
+    local r=$(( 16#${hex:1:2} )) g=$(( 16#${hex:3:2} )) b=$(( 16#${hex:5:2} ))
+    local ring="38;2;$(( (r + 255) / 2 ));$(( (g + 255) / 2 ));$(( (b + 255) / 2 ))"
+    local tinted="${XDG_RUNTIME_DIR:-/tmp}/fastfetch-accent.jsonc"
+    sed -e "s/38;5;75/38;2;$r;$g;$b/g" -e "s/38;5;153/$ring/g" "$config" > "$tinted"
+    fastfetch --config "$tinted" "${narrow[@]}" "$@"
+  else
+    fastfetch "${narrow[@]}" "$@"
+  fi
+}
 
 alias cmatrix='cmatrix -C cyan'

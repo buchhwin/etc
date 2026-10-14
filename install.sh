@@ -19,6 +19,7 @@ STOW_PACKAGES=(
   starship
   alacritty
   fastfetch
+  kde
 )
 
 echo "================================================="
@@ -97,6 +98,10 @@ backup_if_real_file "$HOME/.zshrc"
 backup_if_real_file "$HOME/.config/starship.toml"
 backup_if_real_file "$HOME/.config/alacritty/alacritty.toml"
 backup_if_real_file "$HOME/.config/fastfetch/config.jsonc"
+# KDE: Shortcuts (App-Starts, Arbeitsflächen wechseln) und KWin (Arbeitsflächen,
+# Effekte). KDE schreibt durch den Symlink, Änderungen landen also im Repo.
+backup_if_real_file "$HOME/.config/kglobalshortcutsrc"
+backup_if_real_file "$HOME/.config/kwinrc"
 
 mkdir -p "$HOME/.config"
 
@@ -113,6 +118,13 @@ for package in "${STOW_PACKAGES[@]}"; do
     echo "Warnung: Paket '$package' fehlt im Repository."
   fi
 done
+
+# Alacritty als Plasma-Terminal (Dolphin "Terminal öffnen"); Meta+Return steht
+# schon in kglobalshortcutsrc.
+if command -v kwriteconfig6 >/dev/null 2>&1; then
+  kwriteconfig6 --file kdeglobals --group General --key TerminalApplication alacritty
+  kwriteconfig6 --file kdeglobals --group General --key TerminalService Alacritty.desktop
+fi
 
 echo
 echo "================================================="
