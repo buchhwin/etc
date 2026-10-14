@@ -1,9 +1,12 @@
 [window]
+# Wide enough for fastfetch (the saturn and its block need 101 columns) with
+# room to spare, so no line wraps.
+dimensions = { columns = 120, lines = 30 }
 padding = { x = 10, y = 10 }
 dynamic_padding = true
 decorations = "Full"
-opacity = 0.8
-blur = true
+opacity = 1.0
+blur = false
 
 [font]
 size = 11.0

@@ -6,8 +6,9 @@ Includes:
 
 - Zsh
 - Starship
-- Alacritty
+- Alacritty (Plasma-Terminal, Meta+Return)
 - Fastfetch
+- KDE: globale Shortcuts (`kglobalshortcutsrc`) und KWin (`kwinrc`: Arbeitsflächen, Effekte)
 
 ## Install
 
@@ -24,13 +25,17 @@ The installer sets up the required packages, configures Zsh, installs Oh My Zsh 
 
 ```bash
 cd ~/etc
-stow zsh starship alacritty fastfetch
+stow -t ~ zsh starship alacritty fastfetch kde
 ```
+
+KDE schreibt Änderungen an Shortcuts und KWin-Einstellungen durch die Symlinks
+direkt in dieses Repo; `git diff` zeigt sie, committen wie gewohnt. Neue
+Einstellungen wirken nach dem nächsten Login.
 
 Remove symlinks:
 
 ```bash
-stow -D zsh starship alacritty fastfetch
+stow -D -t ~ zsh starship alacritty fastfetch kde
 ```
 
 ## Update
