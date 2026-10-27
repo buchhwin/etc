@@ -1,0 +1,9 @@
+com.discordapp.Discord	flathub	system
+com.modrinth.ModrinthApp	flathub	system
+com.obsproject.Studio	flathub	system
+com.spotify.Client	flathub	system
+com.usebottles.bottles	flathub	system
+md.obsidian.Obsidian	flathub	system
+org.kde.konsole	flathub	system
+org.localsend.localsend_app	flathub	system
+org.onlyoffice.desktopeditors	flathub	system

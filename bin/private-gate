@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""The private-data gate of this dotfiles repository.
+
+    bin/private-gate              what Git would commit (tracked + untracked, not ignored)
+    bin/private-gate --staged     what the next commit holds (the pre-commit hook)
+    bin/private-gate PATH...      these files (to check a picture before it moves in)
+
+Text: the buchhwin-shell's own rule (scripts/lib/checks.py private_findings:
+places, keys, tokens, e-mail addresses, this user's home), plus what a
+dotfiles repo meets and the shell's gate does not look for yet: IP and MAC
+addresses, Citrix app ids, and this machine's own names - its host name, the
+git identity, the account's full name, NetworkManager connection names (Wi-Fi
+names), the work shares in /etc/fstab. Those are read from the system each
+run and never stored or printed.
+Pictures: GPS, camera, author or copyright in EXIF, any XMP packet, PNG text
+chunks that name someone. Strip them with `exiv2 rm FILE` (lossless).
+Every file: over 50 MB (GitHub warns at 50, refuses 100), or a binary file the
+gate cannot read.
+
+Findings name the file, the line and the kind - never the value. Exit 1 when
+there is one, 2 when the gate cannot run (fail closed).
+A line that has to keep a value that looks private says so on the line:
+"private-data: public" (the shell's marker).
+"""
+import ipaddress
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+WARN_BYTES = 50 * 1000 * 1000
+
+
+def shell_checks():
+    """The shell's checks module, from the installed session first."""
+    candidates = [os.environ.get("BUCHHWIN_SHELL_DIR", ""),
+                  os.path.expanduser("~/.local/share/buchhwin-shell"),
+                  os.path.expanduser("~/git/buchhwin-shell")]
+    for candidate in candidates:
+        lib = Path(candidate) / "scripts" / "lib"
+        if candidate and (lib / "checks.py").is_file():
+            sys.path.insert(0, str(lib))
+            import checks  # noqa: E402
+            return checks
+    print("private-gate: buchhwin-shell's scripts/lib/checks.py not found "
+          "(set BUCHHWIN_SHELL_DIR); refusing to pass anything", file=sys.stderr)
+    sys.exit(2)
+
+
+IPV4 = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d.])")
+MAC = re.compile(r"(?<![0-9A-Fa-f:])[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}(?![0-9A-Fa-f:])")
+CITRIX = re.compile(r"Citrix_")  # the pattern, not an id: private-data: public
+DOC_NETS = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
+
+
+def public_ip(text):
+    try:
+        ip = ipaddress.ip_address(text)
+    except ValueError:
+        return True  # a version number, not an address
+    return ip.is_loopback or ip.is_unspecified or ip.is_multicast or \
+        str(ip) == "255.255.255.255" or any(ip in net for net in DOC_NETS)
+
+
+def run(argv):
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def machine_literals():
+    """[(kind, pattern)] for the names read from this machine now - held in
+    memory only, matched as whole words, case as written."""
+    found = []
+    found.append(("this machine's host name", socket.gethostname()))
+    for key, kind in (("user.email", "the git e-mail"), ("user.name", "the git name")):
+        found.append((kind, run(["git", "config", "--global", key]).strip()))
+    gecos = run(["getent", "passwd", str(os.getuid())]).split(":")
+    if len(gecos) > 4:
+        found.append(("the account's full name", gecos[4].split(",")[0]))
+    for line in run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]).splitlines():
+        name, _, kind = line.rpartition(":")
+        # Wi-Fi, VPN and wired profiles carry chosen names; bridges and
+        # loopback are interface names (virbr0, lo) that configs name freely.
+        if kind in ("802-11-wireless", "vpn", "wireguard", "802-3-ethernet") and \
+                not re.fullmatch(r"(Wired connection|Kabelgebundene Verbindung) \d+", name):
+            found.append(("a NetworkManager connection name", name.replace("\\:", ":")))
+    try:
+        for line in Path("/etc/fstab").read_text().splitlines():
+            parts = line.split()
+            if len(parts) > 2 and parts[2] in ("cifs", "smb3", "nfs", "nfs4") and not line.lstrip().startswith("#"):
+                found.extend(("a network share's name", piece) for piece in parts[0].strip("/").split("/"))
+    except OSError:
+        pass
+    try:
+        monitors = json.loads(run(["hyprctl", "-j", "monitors", "all"]) or "[]")
+    except ValueError:
+        monitors = []  # hyprctl outside Hyprland prints an error, not JSON
+    for monitor in monitors:
+        found.append(("a monitor serial", str(monitor.get("serial", ""))))
+    # The login name is the GitHub owner of these repositories - public; the
+    # home path that contains it is the shell's own check.
+    login = os.environ.get("USER") or Path.home().name
+    return [(kind, re.compile(r"(?<![A-Za-z0-9])" + re.escape(value.strip()) + r"(?![A-Za-z0-9])"))
+            for kind, value in found if len(value.strip()) >= 4 and value.strip() != login]
+
+
+def text_findings(text, checks, homes, literals):
+    found = list(checks.private_findings(text, homes))
+    for number, line in enumerate(text.splitlines(), 1):
+        if checks.PRIVATE_MARK.search(line):
+            continue
+        if any(not public_ip(m.group(1)) for m in IPV4.finditer(line)):
+            found.append((number, "an IP address"))
+        if MAC.search(line):
+            found.append((number, "a MAC address"))
+        if CITRIX.search(line):
+            found.append((number, "a Citrix app id"))
+        for kind, pattern in literals:
+            if pattern.search(line):
+                found.append((number, kind))
+    return found
+
+
+def image_findings(data):
+    try:
+        from io import BytesIO
+        from PIL import Image
+    except ImportError:
+        return [(0, "a picture the gate cannot read (python-pillow missing)")]
+    found = []
+    try:
+        with Image.open(BytesIO(data)) as image:
+            exif = image.getexif()
+            if exif.get_ifd(0x8825):
+                found.append((0, "GPS coordinates in EXIF"))
+            for tag, kind in ((0x010F, "the camera in EXIF"), (0x0110, "the camera in EXIF"),
+                              (0x013B, "an author in EXIF"), (0x8298, "a copyright in EXIF"),
+                              (0x9C9D, "an author in EXIF")):
+                if exif.get(tag):
+                    found.append((0, kind))
+            info = {str(k).lower(): v for k, v in image.info.items()}
+            if "xmp" in info or "xml:com.adobe.xmp" in info:
+                found.append((0, "an XMP packet (author, title, places)"))
+            for key in ("author", "copyright", "comment", "description", "location", "source"):
+                if key in info:
+                    found.append((0, "a PNG text chunk naming " + key))
+    except Exception:  # noqa: BLE001 - a broken picture is a finding, not a crash
+        found.append((0, "a picture the gate cannot open"))
+    return sorted(set(found))
+
+
+def committable():
+    out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                         capture_output=True, check=True).stdout
+    for name in sorted({n for n in out.decode("utf-8", "surrogateescape").split("\0") if n}):
+        path = ROOT / name
+        if path.is_file() and not path.is_symlink():
+            yield name, path.read_bytes()
+
+
+def staged():
+    out = subprocess.run(["git", "-C", str(ROOT), "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMR"],
+                         capture_output=True, check=True).stdout
+    for name in sorted({n for n in out.decode("utf-8", "surrogateescape").split("\0") if n}):
+        blob = subprocess.run(["git", "-C", str(ROOT), "show", ":" + name], capture_output=True, check=True).stdout
+        yield name, blob
+
+
+def given(paths):
+    for name in paths:
+        yield name, Path(name).read_bytes()
+
+
+def main(argv):
+    if argv[:1] in (["-h"], ["--help"]):
+        print(__doc__)
+        return 0
+    checks = shell_checks()
+    homes = checks.own_homes()
+    literals = machine_literals()
+    files = staged() if argv[:1] == ["--staged"] else given(argv) if argv else committable()
+    failed = checked = 0
+    for name, data in files:
+        checked += 1
+        found = []
+        if len(data) > WARN_BYTES:
+            found.append((0, "a file over 50 MB"))
+        if Path(name).suffix.lower() in IMAGE_SUFFIXES:
+            found += image_findings(data)
+        elif b"\0" in data[:8192]:
+            found.append((0, "a binary file the gate cannot read"))
+        else:
+            found += text_findings(data.decode("utf-8", "replace"), checks, homes, literals)
+        for line, kind in found:
+            print(f"{name}:{line}: {kind}")
+            failed += 1
+    print(f"private-gate: {checked} files, {failed} findings")
+    if failed:
+        print("Pictures: exiv2 rm FILE strips the metadata losslessly. Text: remove the value, "
+              "or mark a harmless line with 'private-data: public'.")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

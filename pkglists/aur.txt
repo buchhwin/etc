@@ -1,0 +1,5 @@
+apple_cursor
+brave-bin
+google-chrome
+paru
+visual-studio-code-bin

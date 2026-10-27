@@ -1,0 +1,8 @@
+[Libinput][1133][49298][Logitech G203 LIGHTSYNC Gaming Mouse]
+PointerAccelerationProfile=1
+
+[Libinput][1267][12811][ELAN06C9:00 04F3:320B Touchpad]
+NaturalScroll=true
+
+[Mouse]
+cursorTheme=macOS

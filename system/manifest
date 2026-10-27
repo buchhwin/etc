@@ -1,0 +1,4 @@
+# mode  path under system/files (installed to /<path>)   what to run afterwards (printed, never run)
+0644 etc/systemd/zram-generator.conf     zram: takes effect at the next boot
+0644 etc/tmpfiles.d/thp-madvise.conf     sudo systemd-tmpfiles --create /etc/tmpfiles.d/thp-madvise.conf
+0644 etc/updatedb.conf

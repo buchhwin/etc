@@ -1,0 +1,6 @@
+# Editor and tool leftovers; wallpapers/ has its own allowlist.
+*~
+*.swp
+*.orig
+*.rej
+__pycache__/

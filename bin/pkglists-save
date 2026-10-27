@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Write this machine's package lists into pkglists/ (sorted, one name per line),
+# so `git diff pkglists/` shows what was installed or removed since the last
+# save. Reads only; needs no root. Commit is your own step, after
+# bin/private-gate.
+#
+#   native.txt              explicit packages from core, extra, multilib
+#   other-repos.txt         explicit packages from any other pacman repo
+#                           (repo/name; that repo is added by its vendor's installer)
+#   aur.txt                 explicit foreign packages (AUR), without *-debug
+#   flatpak.txt             Flatpak apps: id, remote, installation
+#   vscode-extensions.txt   VS Code extensions (read from extensions.json)
+#
+# Names listed in $XDG_CONFIG_HOME/etc-private/pkglist-exclude (one per line; a
+# private file outside this repo) stay out of the lists: what would point at
+# the user's work is installed from the private notes instead.
+set -euo pipefail
+repo_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+out=${PKGLISTS_DIR:-$repo_dir/pkglists}
+mkdir -p -- "$out"
+export LC_ALL=C
+exclude=${XDG_CONFIG_HOME:-$HOME/.config}/etc-private/pkglist-exclude
+keep() { if [[ -s $exclude ]]; then grep -v -x -F -f "$exclude" || true; else cat; fi; }
+
+official=$(mktemp)
+trap 'rm -f -- "$official"' EXIT
+pacman -Slq core extra multilib 2>/dev/null | sort -u >"$official"
+
+pacman -Qqen | sort | comm -12 - "$official" | keep >"$out/native.txt"
+pacman -Qqen | sort | comm -23 - "$official" | keep | while read -r name; do
+  printf '%s/%s\n' "$(pacman -Si -- "$name" 2>/dev/null | awk -F': ' '/^Repository/{print $2; exit}')" "$name"
+done >"$out/other-repos.txt"
+pacman -Qqem | grep -v -- '-debug$' | sort | keep >"$out/aur.txt" || true
+
+if command -v flatpak >/dev/null 2>&1; then
+  flatpak list --app --columns=application,origin,installation | sort >"$out/flatpak.txt"
+fi
+
+extensions=${HOME}/.vscode/extensions/extensions.json
+if [[ -r $extensions ]] && command -v jq >/dev/null 2>&1; then
+  jq -r '.[].identifier.id' "$extensions" | sort -u | keep >"$out/vscode-extensions.txt"
+fi
+
+wc -l -- "$out"/*.txt
+git -C "$repo_dir" --no-pager diff --stat -- "$out" 2>/dev/null || true

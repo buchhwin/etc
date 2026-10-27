@@ -1,0 +1,5 @@
+#!/bin/sh
+# Refuses a commit while bin/private-gate finds private data in it. Active
+# through `git config core.hooksPath .githooks` (install.sh sets it; local to
+# this clone). Bypass for one commit only with care: git commit --no-verify.
+exec "$(git rev-parse --show-toplevel)/bin/private-gate" --staged
