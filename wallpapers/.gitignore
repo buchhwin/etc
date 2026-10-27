@@ -1,0 +1,20 @@
+# Only pictures inside the linked folder are tracked. Whatever else it
+# collects (.directory, Thumbs.db, .DS_Store, AppleDouble ._ files, sub-folders
+# such as __MACOSX) stays out. A new picture still needs its own `git add`.
+/*
+!/.gitignore
+!/Pictures/
+/Pictures/*
+!/Pictures/Desktop/
+/Pictures/Desktop/*
+!/Pictures/Desktop/Wallhaven/
+/Pictures/Desktop/Wallhaven/*
+!/Pictures/Desktop/Wallhaven/*.jpg
+!/Pictures/Desktop/Wallhaven/*.jpeg
+!/Pictures/Desktop/Wallhaven/*.png
+!/Pictures/Desktop/Wallhaven/*.webp
+!/Pictures/Desktop/Wallhaven/*.JPG
+!/Pictures/Desktop/Wallhaven/*.JPEG
+!/Pictures/Desktop/Wallhaven/*.PNG
+!/Pictures/Desktop/Wallhaven/*.WEBP
+/Pictures/Desktop/Wallhaven/._*
